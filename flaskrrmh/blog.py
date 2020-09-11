@@ -6,10 +6,13 @@ from werkzeug.exceptions import abort
 from flaskrrmh.auth import login_required
 from flaskrrmh.db import get_db
 
+from typing import List
+
 bp = Blueprint('blog', __name__)
 
 
 @bp.route('/')
+@login_required
 def index():
     db = get_db()
     posts = db.execute(
@@ -17,7 +20,10 @@ def index():
         ' FROM post p JOIN user u ON p.author_id = u.id'
         ' ORDER BY created DESC'
     ).fetchall()
-    return render_template('blog/index.html', posts=posts)
+    user_data: List = db.execute('SELECT * FROM like WHERE user_id = ?', (g.user['id'],)).fetchall()
+    user_data = [it[1] for it in user_data]
+    print(f"user_data = {user_data}")
+    return render_template('blog/index.html', posts=posts, user_data=user_data)
 
 
 @bp.route('/create', methods=('GET', 'POST'))
@@ -106,3 +112,21 @@ def detail(id):
     post = get_post(id)
 
     return render_template('blog/detail.html', post=post)
+
+
+@bp.route('/<int:id>/like', methods=('GET',))
+@login_required
+def like(id):
+    get_post(id)
+    db = get_db()
+    res = db.execute("SELECT * FROM like WHERE user_id = ? AND post_id = ?", (g.user['id'], id)).fetchone()
+    if not res:
+        db.execute('INSERT INTO like (user_id, post_id) VALUES (?, ?)', (g.user['id'], id))
+        db.commit()
+    else:
+        db.execute('DELETE FROM like WHERE user_id = ? AND post_id = ?', (g.user['id'], id))
+        db.commit()
+
+    return redirect(url_for('blog.index'))
+
+
